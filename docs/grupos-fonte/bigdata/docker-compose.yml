@@ -1,0 +1,18 @@
+services:
+
+  db:
+    image: postgres:14.2-alpine
+    environment:
+      POSTGRES_HOST: localhost
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - bigdata:/var/liv/postgresql
+
+
+volumes:
+  bigdata:
