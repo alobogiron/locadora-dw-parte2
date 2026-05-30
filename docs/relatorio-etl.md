@@ -6,30 +6,33 @@ Grupo:
 -->
 
 ---
-title: "Avaliação 02 — Parte II: Processo ETL e Integração de Fontes"
-subtitle: "Modelagem de Data Warehouse — EEL890 (UFRJ)"
+title: "Processo ETL e Integração de Fontes"
+subtitle: "Avaliação 02 — Parte II · Modelagem de Data Warehouse (EEL890) · Tema: locadora de veículos com pátios compartilhados entre seis empresas associadas"
+author:
+  - "Gustavo Oliveira Pessanha da Silva — DRE 122051824"
+  - "André Vinícius Lobo Giron — DRE 122050404"
+date: "Rio de Janeiro · 30 de maio de 2026"
 lang: pt-BR
+toc-title: "Sumário"
 ---
 
-# Capa
+# Lista de figuras
 
-**Universidade Federal do Rio de Janeiro (UFRJ)**
-**Disciplina:** Modelagem de Data Warehouse — EEL890
-**Avaliação:** 02 — Parte II — Projeto de DW e ETL Integrado
-**Título:** Avaliação 02 — Parte II: Processo ETL e Integração de Fontes
-**Tema:** Locadora de veículos — pátios compartilhados entre seis empresas associadas
+Este relatório é ilustrado por **dez figuras**. Todas foram geradas de forma reprodutível
+a partir dos scripts em `docs/figuras/` (ver `docs/build.sh`).
 
-## Grupo
-
-| Nome completo | DRE |
-|---|---|
-| Gustavo Oliveira Pessanha da Silva | 122051824 |
-| André Vinícius Lobo Giron | 122050404 |
-
-**Data de entrega:** 2026-05-30
-**Repositório GitHub:** `<a definir>` (preencher após `git push` final)
-
-\newpage
+| Nº | Figura | Onde |
+|---|---|---|
+| 1 | Arquitetura do ETL (fontes → *staging* → DW) | §2 |
+| 2 | Pipeline de execução (7 estágios, scripts) | §2 |
+| 3 | Tradução MySQL → PostgreSQL | §3 |
+| 4 | Seleção de fontes — 5 integradas, 3 excluídas | §4 |
+| 5 | *Extract* da fonte `bigdata` (a mais complexa) | §5 |
+| 6 | *Transform* em 7 etapas | §5 |
+| 7 | *Load* — dimensões primeiro, depois fatos | §5 |
+| 8 | Três mecanismos de idempotência | §5 |
+| 9 | Matriz de Markov 6×6 (forma WIDE) | §6 |
+| 10 | Achados das revisões adversariais | §7 |
 
 # 1. Introdução
 
@@ -59,27 +62,20 @@ Este documento cobre:
 
 A descrição do **modelo dimensional** está no PDF complementar (`docs/relatorio-dimensional.pdf`).
 
-\newpage
 
 # 2. Arquitetura do ETL
 
-## 2.1 Diagrama em texto
+## 2.1 Visão geral da arquitetura
 
-```
-+----------------------+      +-------------------+      +----------------+
-|  src_andre_gustavo   |      |                   |      |                |
-|  src_mae016          |      |    staging.*      |      |     dw.*       |
-|  src_locadora_db     | ===> | (7 tabelas stg_*  | ===> | (6 dimensoes   |
-|  src_bd_dw_26_1      |      |  + 2 de-paras)    |      |  + 3 fatos)    |
-|  src_bigdata         |      |                   |      |                |
-+----------------------+      +-------------------+      +----------------+
-        |                            |                          |
-   01-05 Extract              06 Transform              07-08 Load
-   (uma sub-fase                (normalizacao,          (popula
-    por fonte)                   de-paras, derivacoes)   dimensoes e fatos)
-```
+A arquitetura segue o padrão clássico de três camadas — fontes, *staging* e DW — ilustrado na Figura 1. Cada fonte é extraída isoladamente (com `sk_fonte` constante) para sete tabelas `staging.stg_*`; um único *Transform* conforma simultaneamente as cinco fontes aplicando as tabelas de-para; e dois *Loads* sequenciais populam primeiro as seis dimensões e depois os três fatos.
+
+![**Figura 1.** Arquitetura do ETL em três camadas. As cinco fontes OLTP (`src_*`) são extraídas para a *staging* (7 tabelas `stg_*` + 2 de-paras), conformadas e carregadas no esquema estrela do DW (`dw.*`).](figuras/etl_fig01_arquitetura.png){ width=16cm }
 
 O fluxo é estritamente sequencial: cada extract isolado por fonte (`sk_fonte` constante), seguido de um único transform que aplica as normalizações e de-paras a todas as 5 fontes simultaneamente, e por fim dois loads sequenciais (dimensões primeiro, fatos depois). Após o load dos fatos, os 5 scripts de relatórios são independentes e podem ser executados em qualquer ordem.
+
+A Figura 2 desdobra esse fluxo nos sete estágios concretos de execução, com os nomes dos scripts SQL de cada um. Dentro dos estágios *Extract* e *Relatórios*, os scripts são independentes entre si; entre estágios, a ordem é obrigatória.
+
+![**Figura 2.** Pipeline de execução do ETL. Sete estágios sequenciais — *staging*, DDL do DW, *Extract* (5 fontes), *Transform*, *Load*, relatórios — cada um com seus scripts SQL. O pipeline é idempotente.](figuras/etl_fig02_pipeline.png){ width=16.5cm }
 
 ## 2.2 Tempos de acionamento — suposição operacional
 
@@ -98,7 +94,6 @@ Adotamos um único cluster PostgreSQL 16 com schemas separados para fontes (`src
 
 A tradução manual MySQL → PostgreSQL para `mae016` e `bd_dw_26_1` é parte do entregável e está documentada na §3.
 
-\newpage
 
 # 3. Fontes consumidas e tradução MySQL → PostgreSQL
 
@@ -134,6 +129,10 @@ As fontes 2 (`mae016`) e 4 (`bd_dw_26_1`) foram modeladas originalmente em MySQL
 
 As traduções foram aplicadas em `staging/01_schema_fontes.sql`. Não houve perda semântica nas conversões (todos os domínios MySQL têm equivalente Postgres ANSI:1999+).
 
+A Figura 3 reúne as conversões mecânicas mais relevantes. Cada construção MySQL à esquerda tem um equivalente PostgreSQL ANSI SQL:1999+ à direita — todas com semântica preservada.
+
+![**Figura 3.** Tradução MySQL → PostgreSQL. Conversões mecânicas aplicadas às fontes 2 (`mae016`) e 4 (`bd_dw_26_1`), do `AUTO_INCREMENT` ao `ENUM`, mantendo a integridade referencial.](figuras/etl_fig03_traducao.png){ width=15.5cm }
+
 ## 3.3 Justificativa: por que ANSI SQL:1999+
 
 Toda a entrega adota PostgreSQL 16 como SGBD único, escrita preferencialmente em ANSI SQL:1999+ com extensões Postgres explicitamente comentadas (ex.: `GENERATED ALWAYS AS IDENTITY` é ANSI 2003; `OVERRIDING SYSTEM VALUE` para inserir sentinela em coluna IDENTITY é Postgres-específico e está comentado no DDL). Esse rigor:
@@ -142,7 +141,6 @@ Toda a entrega adota PostgreSQL 16 como SGBD único, escrita preferencialmente e
 - Reduz dependência de funcionalidades proprietárias.
 - Alinha-se à fundamentação acadêmica do projeto (Elmasri & Navathe cap. 29).
 
-\newpage
 
 # 4. Grupos excluídos e motivos
 
@@ -184,7 +182,9 @@ Das fontes-candidatas disponíveis na turma, **três foram excluídas** do proje
 | EEL890---Big-Data | Pátio de devolução em 4 saltos de JOIN; over-engineered |
 | locadora-oltp | Sem grupo; sem cidade do cliente — inviabiliza 4 relatórios |
 
-\newpage
+A Figura 4 sintetiza essa decisão: das oito fontes-candidatas, foram **integradas** as cinco que expõem, de forma recuperável, todos os atributos exigidos pelos quatro relatórios; as três **excluídas** falham em pelo menos um atributo crítico (cidade do cliente, pátio de devolução ou grupo de veículo).
+
+![**Figura 4.** Seleção de fontes. Cinco fontes integradas (à esquerda, uma cor por fonte) e três excluídas (à direita), cada exclusão acompanhada do motivo técnico determinante.](figuras/etl_fig04_excluidas.png){ width=16.5cm }
 
 # 5. Etapas do ETL
 
@@ -231,6 +231,10 @@ Fonte mais complexa, com várias particularidades:
 - **Atributos faltantes:** `marca`, `cor`, `mecanização` não existem na fonte — recebem NULL ou `'DESCONHECIDA'` (LEVE-04 da revisão).
 - **`data_devolucao_prevista` heurística:** `DtRetirada + 5 dias` (mesmo padrão que `andre_gustavo`).
 
+A Figura 5 mapeia essas particularidades: como a `bigdata` normaliza pessoas físicas e jurídicas em tabelas separadas, exige um `UNION ALL` para `stg_cliente` e uma resolução `XOR` em `CentroCusto`; o pátio só é alcançável via `Vaga`; e a ausência de `IDCategoria` em `Reserva` força o uso da sentinela de grupo.
+
+![**Figura 5.** *Extract* da fonte `bigdata`. As tabelas-origem (esquerda) alimentam as tabelas de *staging* (direita) por caminhos especiais: `UNION ALL` de PF/PJ, `CASE`-XOR de `CentroCusto`, pátio via `Vaga` e reserva sem categoria → sentinela.](figuras/etl_fig05_extract_bigdata.png){ width=16.5cm }
+
 ## 5.2 Transform — `etl/06_transform.sql`
 
 Bloco PL/pgSQL idempotente em 7 etapas:
@@ -243,7 +247,15 @@ Bloco PL/pgSQL idempotente em 7 etapas:
 6. **Tratamento NULL:** `stg_cliente.cidade_origem = 'CIDADE_DESCONHECIDA'` quando ausente.
 7. **`RAISE NOTICE`** para auditoria: conta linhas suspeitas (sem `nome_canonico_patio_retirada`, sem `nome_canonico_grupo`, etc.) e informa o operador antes do load.
 
+A Figura 6 organiza essas sete etapas em sequência. As etapas 2 e 3 (em laranja) aplicam as tabelas de-para; a etapa 7 apenas **informa** o operador — nenhuma linha é descartada silenciosamente, em linha com a transparência exigida pela revisão adversarial.
+
+![**Figura 6.** O *Transform* em sete etapas. Um único bloco PL/pgSQL idempotente conforma simultaneamente as cinco fontes: normalização, de-paras de pátio e grupo, status, derivações, tratamento de NULL e auditoria.](figuras/etl_fig06_transform.png){ width=16.5cm }
+
 ## 5.3 Load — `etl/07_load_dimensoes.sql` + `etl/08_load_fatos.sql`
+
+A Figura 7 resume a regra de ouro do *Load*: **dimensões primeiro, fatos depois**. Essa ordem garante que, ao carregar um fato, toda surrogate key já exista na dimensão — como mostra o exemplo de *lookup* na parte inferior, em que a chave natural do veículo em `stg_locacao` é traduzida para a `sk_veiculo` gravada em `fato_locacao`.
+
+![**Figura 7.** O *Load* em duas fases. Fase 1: dimensões via `ON CONFLICT DO UPDATE`. Fase 2: fatos via `TRUNCATE … RESTART IDENTITY`. Abaixo, o mecanismo de *lookup* de surrogate key da chave natural até a FK do fato.](figuras/etl_fig07_load.png){ width=16.5cm }
 
 ### 5.3.1 Load de dimensões (`07_load_dimensoes.sql`)
 
@@ -271,7 +283,11 @@ Ordem fixa: `fato_locacao → fato_reserva → fato_patio_diario`.
 - `fato_locacao.sk_tempo_devolucao_real IS NULL` e `fato_locacao.sk_patio_devolucao IS NULL` para `EM_ANDAMENTO` e para `CANCELADA` sem devolução (semântica "ainda não ocorreu", MOD-02 do dimensional, MOD-01 do ETL).
 - `fato_reserva.sk_grupo = 0` para reservas da `bigdata` (P-10).
 
-\newpage
+### 5.3.4 Idempotência do pipeline
+
+Três mecanismos complementares (Figura 8) garantem que re-executar qualquer etapa não duplica dados e que a re-execução completa do pipeline produz resultado **bit-a-bit idêntico** — propriedade verificada rodando-o duas vezes seguidas.
+
+![**Figura 8.** Os três mecanismos de idempotência. `DELETE WHERE sk_fonte = N` no *Extract*, `TRUNCATE … RESTART IDENTITY` no *Load* de fatos e `ON CONFLICT DO UPDATE` no *Load* de dimensões.](figuras/etl_fig08_idempotencia.png){ width=16cm }
 
 # 6. Relatórios e Matriz de Markov
 
@@ -303,11 +319,18 @@ Três formas de saída:
 
 Justificativa LONG+WIDE: LONG é o formato canônico para análise programática (pandas, R); WIDE é o formato natural para apresentação visual da matriz 6×6 e cálculo iterado da cadeia (`M^n`).
 
-\newpage
+A Figura 9 mostra a forma WIDE como um *heatmap*: cada célula `(i, j)` é a probabilidade de um veículo retirado no pátio `i` ser devolvido no pátio `j`. A diagonal (destacada) concentra as devoluções no mesmo pátio, e a coluna à direita confirma a propriedade estocástica — toda linha soma 1,0. (Os valores são ilustrativos, sobre o *seed* sintético.)
+
+![**Figura 9.** Matriz de Markov 6×6 na forma WIDE. *Heatmap* das probabilidades de transição retirada→devolução entre os seis pátios; a diagonal destacada são as devoluções no mesmo pátio e cada linha soma 1,0.](figuras/etl_fig09_markov_matriz.png){ width=15cm }
+
 
 # 7. Problemas encontrados durante o desenvolvimento
 
 Esta seção lista os problemas reais identificados durante o desenvolvimento e suas resoluções. Os problemas vêm das duas revisões adversariais (`docs/revisoes/revisao-dimensional.md` e `docs/revisoes/revisao-etl.md`), executadas por um subagente DBA sênior adversarial após cada fase.
+
+A Figura 10 dá a visão de conjunto: foram **29 achados** ao todo (15 na fase dimensional, 14 na fase ETL), classificados por severidade e **todos endereçados**. As subseções a seguir detalham os mais relevantes.
+
+![**Figura 10.** Achados das revisões adversariais. Duas revisões (dimensional e ETL) identificaram 29 achados — críticos, moderados e leves — todos resolvidos antes da entrega.](figuras/etl_fig10_achados.png){ width=16cm }
 
 ## 7.1 CRÍTICO — Relatório (a) sem corte por marca/modelo/mecanização (dimensional)
 
@@ -385,7 +408,6 @@ A revisão adversarial da fase ETL (`docs/revisoes/revisao-etl.md`) identificou 
 | L-ETL-05 | Endereço de pátio em `dim_patio` resolvido por `MAX()` arbitrário entre fontes. | Aceito: os 6 pátios canônicos têm endereço idêntico em todas as fontes (são os mesmos prédios físicos); `MAX()` deduplica corretamente. |
 | L-ETL-06 | `data_devolucao_prevista` estimada como `retirada + 5d` em fontes 1 e 5 sem documentação. | Heurístico documentado no cabeçalho dos extracts 01 e 05; valor explícito no comentário do INSERT. |
 
-\newpage
 
 # 8. Conclusão
 
@@ -423,7 +445,6 @@ O DW viabiliza **análises cross-empresa** que são impossíveis nos OLTPs origi
 - Dedup *cross-fonte* opcional via MDM externo (D-03, alternativa Kimball cap. 11).
 - Migração para arquitetura Lakehouse (Delta/Iceberg) se volume crescer ordens de magnitude.
 
-\newpage
 
 # 9. Referências bibliográficas
 
@@ -433,7 +454,6 @@ O DW viabiliza **análises cross-empresa** que são impossíveis nos OLTPs origi
 - **MySQL Documentation.** *MySQL 8.0 Reference Manual — Data Types.* Disponível em: <https://dev.mysql.com/doc/refman/8.0/en/>. Consultado para a tradução MySQL→Postgres.
 - **Brasil.** Lei nº 662/1949, Lei nº 6.802/1980, Lei nº 10.607/2002 — feriados nacionais.
 
-\newpage
 
 # Apêndice A — Scripts de Extract
 
@@ -1049,7 +1069,6 @@ LEFT JOIN src_bigdata.Vaga vag_d ON vag_d.IDVaga = m.IDVagaDestino;
 RESET search_path;
 ```
 
-\newpage
 
 # Apêndice B — Script de Transform (`etl/06_transform.sql`)
 
@@ -1237,7 +1256,6 @@ END $$;
 RESET search_path;
 ```
 
-\newpage
 
 # Apêndice C — Scripts de Load
 
@@ -1629,7 +1647,6 @@ WHERE COALESCE(vda.sk_patio_loc, vp.sk_patio_origem) IS NOT NULL;
 RESET search_path;
 ```
 
-\newpage
 
 # Apêndice D — Scripts de Relatórios + Markov
 

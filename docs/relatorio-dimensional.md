@@ -6,34 +6,40 @@ Grupo:
 -->
 
 ---
-title: "Avaliação 02 — Parte II: Modelo Dimensional Estrela"
-subtitle: "Modelagem de Data Warehouse — EEL890 (UFRJ)"
+title: "Modelo Dimensional Estrela do Data Warehouse"
+subtitle: "Avaliação 02 — Parte II · Modelagem de Data Warehouse (EEL890) · Tema: locadora de veículos com pátios compartilhados entre seis empresas associadas"
+author:
+  - "Gustavo Oliveira Pessanha da Silva — DRE 122051824"
+  - "André Vinícius Lobo Giron — DRE 122050404"
+date: "Rio de Janeiro · 30 de maio de 2026"
 lang: pt-BR
+toc-title: "Sumário"
 ---
 
-# Capa
+# Lista de figuras
 
-**Universidade Federal do Rio de Janeiro (UFRJ)**
-**Disciplina:** Modelagem de Data Warehouse — EEL890
-**Avaliação:** 02 — Parte II — Projeto de DW e ETL Integrado
-**Título:** Avaliação 02 — Modelagem de Data Warehouse — Parte II: Modelo Dimensional Estrela
-**Tema:** Locadora de veículos — pátios compartilhados entre seis empresas associadas
+Este relatório é ilustrado por **nove figuras**. Todas foram geradas de forma reprodutível
+a partir dos scripts em `docs/figuras/` (ver `docs/build.sh`).
 
-## Grupo
-
-| Nome completo | DRE |
-|---|---|
-| Gustavo Oliveira Pessanha da Silva | 122051824 |
-| André Vinícius Lobo Giron | 122050404 |
-
-**Data de entrega:** 2026-05-30
-**Repositório GitHub:** `<a definir>` (preencher após `git push` final)
-
-\newpage
+| Nº | Figura | Onde |
+|---|---|---|
+| 1 | Visão geral da integração — cinco OLTP heterogêneos → DW estrela | §1 |
+| 2 | Bus matrix de Kimball (mapa processo × dimensão) | §3 |
+| 3 | Os três grãos de fato (transação × transação × snapshot) | §3 |
+| 4 | Esquema estrela do DW — constelação de 3 fatos + 6 dimensões | §3 |
+| 5 | `fato_locacao` em detalhe — *role-playing* e aditividade das métricas | §4 |
+| 6 | Conformação de chaves — os 6 pátios canônicos | §6 |
+| 7 | A *smart-key* de `dim_tempo` (`YYYYMMDD`) | §6 |
+| 8 | SCD Tipo 1 (sobrescrita) | §7 |
+| 9 | Matriz de Markov da movimentação da frota | §8 |
 
 # 1. Introdução
 
 Este relatório descreve o **modelo dimensional estrela** projetado para o Data Warehouse (DW) que integra cinco sistemas operativos (OLTP) heterogêneos de uma associação de seis locadoras de veículos. As locadoras compartilham seis pátios — Aeroporto do Galeão, Aeroporto Santos Dumont, Rodoviária do Rio, Shopping Rio Sul, Shopping Nova América e Barra Shopping — e cada uma mantém seu próprio sistema transacional. A integração via DW único viabiliza os quatro relatórios gerenciais globais exigidos pelo enunciado e a análise de previsão de ocupação por **cadeia de Markov**.
+
+A Figura 1 resume, em alto nível, o que este projeto realiza: cinco sistemas operativos independentes — escritos em três SGBDs distintos — são extraídos para uma área intermediária de *staging*, onde têm seus vocabulários conformados, e então carregados em um único esquema estrela. É essa unificação que torna possível responder a perguntas que **nenhum** dos sistemas originais consegue responder isoladamente.
+
+![**Figura 1.** Visão geral da integração. Cinco sistemas OLTP heterogêneos (PostgreSQL, MySQL traduzido e ANSI SQL) convergem, via *staging*, para um Data Warehouse estrela único com 3 fatos e 6 dimensões conformadas.](figuras/dim_fig01_visao_geral.png){ width=16cm }
 
 Das seis fontes-candidatas disponíveis na turma, **cinco foram selecionadas** e integradas: `locadora-dw-parte1` (Parte I do próprio grupo), `mae016`, `locadora-db`, `bd-dw-26-1` e `bigdata`. As três fontes excluídas (e os motivos técnicos da exclusão) são documentadas no relatório complementar `docs/relatorio-etl.pdf`, §4. A escolha das cinco fontes integradas privilegia esquemas que expõem, de forma recuperável, todos os atributos exigidos pelos quatro relatórios gerenciais — em particular: pátio de devolução real, cidade do cliente e grupo/categoria do veículo.
 
@@ -41,7 +47,6 @@ Este documento cobre **exclusivamente o modelo dimensional**: bus matrix Kimball
 
 Fundamentação metodológica: Kimball & Ross, *The Data Warehouse Toolkit*, 3ª edição (caps. 1, 5, 6 e 7) e Elmasri & Navathe, *Sistemas de Banco de Dados*, 7ª edição (caps. 29 e 30 — OLAP e Data Warehousing).
 
-\newpage
 
 # 2. Fontes consumidas
 
@@ -57,7 +62,6 @@ Cinco esquemas OLTP foram integrados, cada um em um *schema* PostgreSQL separado
 
 Os DDLs originais em MySQL (fontes 2 e 4) foram traduzidos manualmente para PostgreSQL preservando a semântica e a integridade referencial (sintaxe ANSI SQL:1999+ + extensões Postgres pontuais comentadas). A staging area unifica esses cinco esquemas heterogêneos em sete tabelas `staging.stg_*` (patio, grupo, veiculo, cliente, reserva, locacao, movimentacao_patio), e o DW final reside no schema `dw` com seis dimensões conformadas (`dim_*`) e três fatos (`fato_*`).
 
-\newpage
 
 # 3. Visão geral do esquema estrela
 
@@ -75,6 +79,10 @@ A tabela a seguir documenta a integração dos três processos em torno das seis
 
 A dimensão `dim_fonte` participa de todos os três fatos porque toda métrica deve ser rastreável até o sistema operativo de origem — exigência implícita do enunciado ao falar em "integração das fontes de dados escolhidas". Em `fato_patio_diario`, `dim_fonte` realiza dupla função: identifica tanto o sistema que reportou o snapshot quanto a empresa proprietária da frota observada, viabilizando o recorte "frota da empresa dona vs. das outras associadas" exigido no relatório (a).
 
+A Figura 2 traduz a tabela acima em um mapa visual. Cada célula indica se a dimensão (coluna) participa do fato (linha) e, quando há *role-playing*, quantos papéis/FKs ela assume. A leitura por **coluna** mostra que toda dimensão é compartilhada por pelo menos dois processos — é o que caracteriza dimensões *conformadas* e habilita o *drill-across* discutido na §8.
+
+![**Figura 2.** Bus matrix de Kimball. As três tabelas-fato (linhas) compartilham as seis dimensões conformadas (colunas); o número em cada célula é a quantidade de papéis (FKs) da dimensão naquele fato. A célula laranja marca a sentinela `GRUPO_NAO_INFORMADO` usada pelas reservas da `bigdata` (P-10).](figuras/dim_fig03_busmatrix.png){ width=16.5cm }
+
 ## 3.2 Síntese dos fatos
 
 | Fato | Tipo Kimball | Grão | Relatórios servidos |
@@ -82,6 +90,10 @@ A dimensão `dim_fonte` participa de todos os três fatos porque toda métrica d
 | `fato_locacao` | Transação | Uma locação | (b), (d), Markov |
 | `fato_reserva` | Transação | Uma reserva | (c) |
 | `fato_patio_diario` | Snapshot periódico | Veículo × dia | (a) |
+
+A escolha de **três** fatos — e não de um único fato genérico de "atividade" — decorre diretamente de cada processo ter **grão** e **tipo Kimball** próprios, como a Figura 3 ilustra. Misturá-los forçaria NULLs nas métricas que não se aplicam e impediria a otimização (anti-padrão da *fact table* genérica; ver decisão D-01).
+
+![**Figura 3.** Os três grãos de fato. Cada processo de negócio tem grão e tipo Kimball distintos: duas tabelas de transação (`fato_locacao`, `fato_reserva`) e um *snapshot* periódico (`fato_patio_diario`), cujo contador é apenas semi-aditivo no eixo do tempo.](figuras/dim_fig05_graos.png){ width=16cm }
 
 ## 3.3 Síntese das dimensões
 
@@ -94,92 +106,14 @@ A dimensão `dim_fonte` participa de todos os três fatos porque toda métrica d
 | `dim_cliente` | 10³-10⁴ | Tipo 1 | Clientes por fonte (sem dedup *cross-fonte*) |
 | `dim_fonte` | 6 (5 fontes reais + 1 sentinela) | Tipo 1 | Cadastro das fontes/empresas associadas |
 
-## 3.4 Diagrama Mermaid do esquema estrela
+## 3.4 Diagrama do esquema estrela
 
-A figura a seguir resume a estrela. Cada `}o--||` indica uma relação fato-dimensão (vários eventos por linha de dimensão). Papéis múltiplos para `dim_tempo` e `dim_patio` (role-playing) aparecem como FKs múltiplas dentro do fato.
+A Figura 4 consolida o esquema em um único diagrama: as três tabelas-fato ocupam a coluna central e as seis dimensões conformadas, as laterais. As linhas cinza são as chaves estrangeiras; os selos laranja `×3 papéis` e `×2 papéis` sinalizam o *role-playing* de `dim_tempo` e `dim_patio` (detalhado na Figura 5). Por ser uma **constelação de fatos**, cada dimensão é alcançada por mais de um fato — base do *drill-across* da §8.
 
-```mermaid
-erDiagram
-    FATO_LOCACAO {
-        int sk_locacao PK
-        bigint id_locacao_origem
-        int sk_tempo_retirada_real FK
-        int sk_tempo_devolucao_real FK "NULL se EM_ANDAMENTO"
-        int sk_tempo_devolucao_prevista FK
-        int sk_patio_retirada FK
-        int sk_patio_devolucao FK "NULL se EM_ANDAMENTO"
-        int sk_veiculo FK
-        int sk_grupo FK
-        int sk_cliente FK
-        int sk_fonte FK
-        string status_locacao
-        int qtd_locacoes
-        int duracao_prevista_dias
-        int duracao_real_dias
-        int km_rodados
-        number valor_diaria_aplicada
-        number valor_total_estimado
-        number valor_total_final
-    }
-    FATO_RESERVA {
-        int sk_reserva PK
-        bigint id_reserva_origem
-        int sk_tempo_reserva FK
-        int sk_tempo_retirada_prevista FK
-        int sk_tempo_devolucao_prevista FK
-        int sk_patio_retirada FK
-        int sk_patio_devolucao FK
-        int sk_grupo FK "sentinela 0 para bigdata"
-        int sk_cliente FK
-        int sk_fonte FK
-        string status_reserva
-        int qtd_reservas
-        int qtd_veiculos_solicitados
-        int duracao_prevista_dias
-        int dias_antecedencia "nao-aditiva (media)"
-    }
-    FATO_PATIO_DIARIO {
-        int sk_patio_diario PK
-        int sk_tempo FK
-        int sk_patio FK
-        int sk_veiculo FK
-        int sk_grupo FK
-        int sk_fonte FK
-        string situacao
-        bool flag_frota_propria_no_patio
-        int qtd_veiculos
-        int capacidade_vagas_patio
-    }
-    DIM_TEMPO { int sk_tempo PK }
-    DIM_PATIO { int sk_patio PK }
-    DIM_VEICULO { int sk_veiculo PK }
-    DIM_GRUPO { int sk_grupo PK }
-    DIM_CLIENTE { int sk_cliente PK }
-    DIM_FONTE { int sk_fonte PK }
+![**Figura 4.** Esquema estrela do Data Warehouse (constelação de fatos). Os três fatos (verde) compartilham as seis dimensões conformadas (azul); `dim_tempo` e `dim_patio` participam de `fato_locacao` em 3 e 2 papéis, respectivamente.](figuras/dim_fig02_estrela.png){ width=15.5cm }
 
-    FATO_LOCACAO }o--|| DIM_TEMPO : "3 papeis"
-    FATO_LOCACAO }o--|| DIM_PATIO : "2 papeis"
-    FATO_LOCACAO }o--|| DIM_VEICULO : envolve
-    FATO_LOCACAO }o--|| DIM_GRUPO : pertence
-    FATO_LOCACAO }o--|| DIM_CLIENTE : firma
-    FATO_LOCACAO }o--|| DIM_FONTE : origem
+O diagrama entidade-relação completo, com todas as colunas e atributos das dimensões em notação Mermaid `erDiagram`, está disponível no arquivo-fonte `dimensional/diagrama-estrela.md`.
 
-    FATO_RESERVA }o--|| DIM_TEMPO : "3 papeis"
-    FATO_RESERVA }o--|| DIM_PATIO : "2 papeis"
-    FATO_RESERVA }o--|| DIM_GRUPO : solicita
-    FATO_RESERVA }o--|| DIM_CLIENTE : realiza
-    FATO_RESERVA }o--|| DIM_FONTE : origem
-
-    FATO_PATIO_DIARIO }o--|| DIM_TEMPO : "dia"
-    FATO_PATIO_DIARIO }o--|| DIM_PATIO : observado
-    FATO_PATIO_DIARIO }o--|| DIM_VEICULO : veiculo
-    FATO_PATIO_DIARIO }o--|| DIM_GRUPO : segmenta
-    FATO_PATIO_DIARIO }o--|| DIM_FONTE : "frota"
-```
-
-O diagrama completo, com todas as colunas e atributos das dimensões, está em `dimensional/diagrama-estrela.md`.
-
-\newpage
 
 # 4. Fatos detalhados
 
@@ -192,6 +126,10 @@ O diagrama completo, com todas as colunas e atributos das dimensões, está em `
   - `sk_tempo_retirada_real`, `sk_tempo_devolucao_real`, `sk_tempo_devolucao_prevista` (role-playing de `dim_tempo`)
   - `sk_patio_retirada`, `sk_patio_devolucao` (role-playing de `dim_patio`)
   - `sk_veiculo`, `sk_grupo`, `sk_cliente`, `sk_fonte`
+
+A Figura 5 detalha esse fato. À esquerda, o *role-playing*: a mesma `dim_tempo` é referenciada por **três** FKs (retirada real, devolução real e devolução prevista) e a mesma `dim_patio` por **duas** (retirada e devolução). À direita, a aditividade de cada métrica — note que `valor_diaria_aplicada` é **não-aditiva** (tarifa congelada; agrega-se por média ponderada, nunca por somatório).
+
+![**Figura 5.** `fato_locacao` em detalhe. Role-playing de `dim_tempo` (3 papéis) e `dim_patio` (2 papéis), as demais dimensões e a tabela de métricas com sua classificação de aditividade.](figuras/dim_fig04_fato_locacao.png){ width=16.5cm }
 
 ### Métricas
 
@@ -324,7 +262,6 @@ O diagrama completo, com todas as colunas e atributos das dimensões, está em `
 - `sk_patio` = pátio de retirada da locação que cobre o dia (se `ALUGADO`); senão pátio de origem do veículo (via `stg_veiculo.nome_canonico_patio`).
 - `flag_frota_propria_no_patio` = (`dim_fonte.codigo_fonte` do veículo == `dim_patio.codigo_fonte_dona`).
 
-\newpage
 
 # 5. Dimensões detalhadas
 
@@ -444,7 +381,6 @@ A reconciliação é mediada pela tabela `staging.depara_patio (sk_fonte, id_nat
 | 4 | `bd_dw_26_1` | Grupo BD-DW-26.1 (Ana, Mariana, +) | MYSQL |
 | 5 | `bigdata` | Grupo BigData | ANSI |
 
-\newpage
 
 # 6. Conformação de chaves
 
@@ -464,6 +400,10 @@ A reconciliação é mediada por `staging.depara_patio (sk_fonte, id_natural_ori
 | `SHOPPING_BARRA` | "Barra Shopping", "BarraShopping", "BRR" |
 
 Linhas das fontes que não casarem com nenhum canônico são desviadas para fila de exceção (não entram nos fatos).
+
+A Figura 6 mostra essa conformação em ação: os mesmos seis pátios físicos aparecem sob nomes diferentes em cada sistema-origem ("Galeão", "GIG", "Aeroporto do Galeão"…), e a tabela `staging.depara_patio` os colapsa em uma única chave natural canônica por pátio.
+
+![**Figura 6.** Conformação de chaves de `dim_patio`. Cinco vocabulários distintos para os mesmos seis pátios são reconciliados em uma chave natural única via `staging.depara_patio`.](figuras/dim_fig06_conformacao_patio.png){ width=16cm }
 
 ## 6.2 `dim_grupo` — lista canônica normalizada
 
@@ -490,11 +430,14 @@ A chave inteira `YYYYMMDD` é:
 - **Estável:** não depende de ordem de carga (diferente de SERIAL).
 - **Suporta sentinela** `sk_tempo = 19000101` para "data desconhecida".
 
+A Figura 7 disseca essa chave: o inteiro `YYYYMMDD` codifica ano, mês e dia de forma legível ao olho humano e naturalmente ordenável, permitindo, por exemplo, filtrar um ano inteiro com `WHERE sk_tempo BETWEEN 20250101 AND 20251231` sem nenhum JOIN à dimensão.
+
+![**Figura 7.** Anatomia da *smart-key* de `dim_tempo`. O inteiro `YYYYMMDD` é legível, ordenável e estável (não depende da ordem de carga), e reserva `19000101` como sentinela de "data desconhecida".](figuras/dim_fig07_smartkey_tempo.png){ width=15.5cm }
+
 ## 6.6 `dim_fonte` — cadastro fixo
 
 Sem conformação aplicável: `dim_fonte` é cadastro fixo conhecido a priori, com `sk_fonte` atribuída manualmente em `etl/07_load_dimensoes.sql`.
 
-\newpage
 
 # 7. Decisões de modelagem
 
@@ -521,6 +464,10 @@ Sem conformação aplicável: `dim_fonte` é cadastro fixo conhecido a priori, c
 - **Decisão:** toda dimensão é SCD tipo 1 (sobrescreve).
 - **Alternativa:** SCD-2 (registro histórico com `data_inicio`/`data_fim`/`flag_atual`) em `dim_grupo` (preço muda) e `dim_cliente` (cidade muda).
 - **Justificativa:** o enunciado pede relatórios gerenciais agregados e matriz de Markov — nenhum precisa de "como o preço estava no dia X?" porque o snapshot de preço já está congelado em `fato_locacao.valor_diaria_aplicada`. Para cidade do cliente, mudanças são raras e a perda de fidelidade é aceitável.
+
+A Figura 8 ilustra a mecânica do SCD Tipo 1: quando um atributo muda (no exemplo, a cidade de um cliente), a linha da dimensão é **sobrescrita** mantendo a mesma surrogate key — o valor antigo se perde. É uma escolha consciente, já que o histórico de tarifa relevante para os relatórios fica preservado nos próprios fatos.
+
+![**Figura 8.** SCD Tipo 1 (sobrescrita). A mudança de um atributo atualiza a linha da dimensão preservando a `sk_*`; o histórico não é mantido na dimensão (SCD-2 fica como evolução futura, ver §8 do relatório de ETL).](figuras/dim_fig08_scd1.png){ width=15cm }
 
 ## D-05. `dim_grupo` separada (não desnormalizada em `dim_veiculo`)
 
@@ -646,7 +593,6 @@ A `bigdata.Reserva` não expõe `IDCategoria`. Adotamos linha sentinela `'GRUPO_
 
 **Alternativas não adotadas:** descartar reservas da `bigdata` (perde 1/5 do relatório c); atribuir grupo arbitrário (oculta a limitação).
 
-\newpage
 
 # 8. Considerações para uso analítico
 
@@ -682,6 +628,10 @@ Montagem: `fato_locacao` JOIN `dim_grupo` + `dim_cliente`. Ranking via `DENSE_RA
 
 Derivada agregando `fato_locacao` por `(sk_patio_retirada, sk_patio_devolucao)` para `status_locacao = 'CONCLUIDA'`. Normalização por linha (`SUM(qtd_locacoes) OVER (PARTITION BY patio_retirada)`). Soma por linha = 1.0 validada com tolerância de 1e-6. Saída em duas formas: LONG (uma linha por par) e WIDE (matriz 6×6 com `COUNT(*) FILTER`).
 
+A Figura 9 representa essa matriz como uma cadeia de Markov sobre os seis pátios: cada seta é a probabilidade de um veículo retirado no pátio *i* ser devolvido no pátio *j*, e cada laço, a probabilidade de retornar ao mesmo pátio. Como toda linha soma 1,0, a matriz é **estocástica** e pode ser iterada (`M^n`) para prever a ocupação futura da frota. A construção do SQL e a forma WIDE são detalhadas no relatório de ETL (§6.5, Figura 9 daquele documento).
+
+![**Figura 9.** Matriz de Markov da movimentação da frota, derivada de `fato_locacao`. As setas (espessura proporcional à probabilidade) representam transições retirada→devolução entre os seis pátios; os laços, devoluções no mesmo pátio.](figuras/dim_fig09_markov.png){ width=13.5cm }
+
 ## 8.6 Drill across
 
 Combinações úteis viabilizadas pelas dimensões conformadas:
@@ -690,7 +640,6 @@ Combinações úteis viabilizadas pelas dimensões conformadas:
 - `fato_locacao` ∪ `fato_patio_diario` por `(dim_veiculo, dim_patio, dim_fonte)` — analisar utilização da frota.
 - `fato_reserva` ∪ `fato_patio_diario` por `(dim_grupo, dim_patio, dim_fonte)` — relacionar demanda (reservas) com oferta (estoque).
 
-\newpage
 
 # 9. Referências bibliográficas
 
@@ -701,7 +650,6 @@ Combinações úteis viabilizadas pelas dimensões conformadas:
 - **Brasil.** Lei nº 6.802, de 30 de junho de 1980. Nossa Senhora Aparecida.
 - **Brasil.** Lei nº 10.607, de 19 de dezembro de 2002. Consolida feriados nacionais.
 
-\newpage
 
 # Apêndice A — DDL do esquema estrela (`dw/01_schema_dw.sql`)
 
@@ -974,7 +922,6 @@ OVERRIDING SYSTEM VALUE VALUES
 RESET search_path;
 ```
 
-\newpage
 
 # Apêndice B — Dicionário de dados do DW (`dicionario/dicionario-dimensional.md`)
 

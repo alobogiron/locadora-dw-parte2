@@ -194,13 +194,35 @@ Grupo:
 -->
 ```
 
-### D. Conversão para PDF
+### D. Conversão para PDF + ODT (pipeline ilustrado)
 
-Tente, nesta ordem:
+Os relatórios são **ilustrados** e reproduzíveis por `docs/build.sh`, que: (1) gera as figuras
+por código (`docs/figuras/gen_dimensional.py` + `gen_etl.py` sobre `_lib.py`, que emitem **SVG**);
+(2) rasteriza SVG→PNG com LibreOffice; (3) constrói PDF e ODT com pandoc.
 
-1. `pandoc docs/relatorio-dimensional.md -o docs/relatorio-dimensional.pdf --pdf-engine=xelatex --toc --number-sections`
-2. `pandoc docs/relatorio-etl.md -o docs/relatorio-etl.pdf --pdf-engine=xelatex --toc --number-sections`
-3. Se Pandoc não estiver disponível, oriente o humano a abrir os `.md` no VSCode com extensão Markdown PDF.
+```bash
+bash docs/build.sh    # da raiz do repositório
+```
+
+Comandos equivalentes (caso precise rodar manualmente):
+
+```bash
+pandoc docs/relatorio-dimensional.md --resource-path=docs --css=docs/estilo-relatorio.css \
+  --embed-resources --standalone --toc --toc-depth=3 --pdf-engine=weasyprint \
+  -o docs/relatorio-dimensional.pdf
+pandoc docs/relatorio-dimensional.md --resource-path=docs --toc --toc-depth=3 \
+  -o docs/relatorio-dimensional.odt
+# (idem para relatorio-etl e, sem --toc, para folha-de-rosto)
+```
+
+Regras importantes deste pipeline:
+- A **capa** vem do bloco de metadata YAML (title/subtitle/author/date), estilizado por
+  `docs/estilo-relatorio.css` (`#title-block-header`); **não** crie uma seção `# Capa` no corpo.
+- **Não** use `--number-sections` (a numeração já está nos próprios títulos, ex.: `# 1. Introdução`).
+- **Não** use `\newpage`; as quebras de página vêm do CSS (`h1 { page-break-before: always }`).
+- Cada figura entra como `![**Figura N.** legenda](figuras/arquivo.png){ width=NNcm }`; a numeração
+  é controlada só pela legenda (na ordem de leitura), e há uma seção `# Lista de figuras` no topo.
+- Engine PDF é **WeasyPrint** (HTML/CSS), não xelatex.
 
 ### E. README.md da raiz
 

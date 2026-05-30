@@ -47,11 +47,12 @@ locadora-dw-parte2/
 ├── docs/
 │   ├── enunciado.md                <- enunciado oficial da Parte II
 │   ├── grupo.md                    <- nomes + DREs canônicos
-│   ├── folha-de-rosto.md           <- folha de rosto da entrega
-│   ├── relatorio-dimensional.md    <- PDF 1 (fonte markdown)
-│   ├── relatorio-dimensional.pdf   <- PDF 1: descrição do modelo estrela
-│   ├── relatorio-etl.md            <- PDF 2 (fonte markdown)
-│   ├── relatorio-etl.pdf           <- PDF 2: comentários sobre o ETL
+│   ├── folha-de-rosto.{md,pdf,odt} <- folha de rosto da entrega
+│   ├── relatorio-dimensional.{md,pdf,odt}  <- Relatório 1: modelo estrela (ilustrado, 9 figuras)
+│   ├── relatorio-etl.{md,pdf,odt}          <- Relatório 2: processo ETL (ilustrado, 10 figuras)
+│   ├── estilo-relatorio.css        <- folha de estilo dos PDFs (WeasyPrint)
+│   ├── build.sh                    <- build reprodutível: figuras → PDF + ODT
+│   ├── figuras/                    <- 19 figuras (geradores Python + SVG + PNG)
 │   ├── grupos-fonte/               <- cópia auto-contida das 5 fontes
 │   └── revisoes/                   <- revisões adversariais por fase
 ├── dimensional/                    <- modelo dimensional conceitual (modelo-dimensional.md + diagrama-estrela.md)
@@ -110,8 +111,20 @@ Total: 14 arquivos SQL executados em sequência. O pipeline é **idempotente** �
 
 ### Entregáveis em PDF
 
-- Relatório do **modelo dimensional**: [PDF](docs/relatorio-dimensional.pdf) · [ODF/`.odt`](docs/relatorio-dimensional.odt) — capa, sumário, descrição completa do modelo estrela, ligação fonte→DW por fato e por dimensão, decisões de modelagem **D-01..D-10**, pendências e suposições **P-01..P-10**, todos os 15 achados da revisão adversarial dimensional (4 críticos + 6 moderados + 5 leves) com suas resoluções, considerações analíticas, DDL completo do DW e dicionário em apêndices.
-- Relatório do **processo ETL**: [PDF](docs/relatorio-etl.pdf) · [ODF/`.odt`](docs/relatorio-etl.odt) — arquitetura do ETL, tradução MySQL→Postgres, grupos excluídos e motivos, etapas Extract/Transform/Load, relatórios e Markov, todos os 14 achados da revisão ETL (2 críticos + 6 moderados + 6 leves) com suas resoluções, conclusão e apêndices com todos os scripts.
+Ambos os relatórios têm **capa diagramada, sumário e lista de figuras**, e estão disponíveis nos três formatos (`.md`, `.pdf`, `.odt`).
+
+- Relatório do **modelo dimensional** (capa + sumário + **9 figuras**): [PDF](docs/relatorio-dimensional.pdf) · [ODF/`.odt`](docs/relatorio-dimensional.odt) · [Markdown](docs/relatorio-dimensional.md) — descrição completa do modelo estrela ilustrada (visão geral da integração, bus matrix, esquema estrela, grãos de fato, `fato_locacao` em detalhe, conformação de pátios, *smart-key*, SCD-1 e cadeia de Markov), ligação fonte→DW por fato e por dimensão, decisões **D-01..D-10**, pendências **P-01..P-10**, os 15 achados da revisão adversarial dimensional (4 críticos + 6 moderados + 5 leves) com resoluções, considerações analíticas, DDL completo do DW e dicionário em apêndices.
+- Relatório do **processo ETL** (capa + sumário + **10 figuras**): [PDF](docs/relatorio-etl.pdf) · [ODF/`.odt`](docs/relatorio-etl.odt) · [Markdown](docs/relatorio-etl.md) — arquitetura do ETL e pipeline de execução ilustrados, tradução MySQL→Postgres, seleção de fontes (5 integradas × 3 excluídas), *Extract* da `bigdata`, *Transform* em 7 etapas, *Load* e idempotência, matriz de Markov 6×6, os 14 achados da revisão ETL (2 críticos + 6 moderados + 6 leves) com resoluções, conclusão e apêndices com todos os scripts.
+
+### Como gerar os PDFs/ODTs
+
+Os entregáveis são reproduzíveis a partir dos `.md` por um único script (requer `python3`, `libreoffice`, `pandoc` e `weasyprint`):
+
+```bash
+bash docs/build.sh   # regenera as 19 figuras (SVG→PNG) e constrói os 6 arquivos PDF/ODT
+```
+
+As figuras são geradas por código (`docs/figuras/gen_dimensional.py` e `gen_etl.py`, sobre a biblioteca `_lib.py`), o que torna o resultado determinístico e versionável.
 
 ### Folha de rosto e dicionário
 

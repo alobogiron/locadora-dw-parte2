@@ -42,10 +42,12 @@ Grupo:
 
 | Artefato | Caminho no repositório |
 |---|---|
-| Relatório do modelo dimensional (PDF) | `docs/relatorio-dimensional.pdf` |
-| Relatório do modelo dimensional (ODF) | `docs/relatorio-dimensional.odt` |
-| Relatório do processo ETL (PDF) | `docs/relatorio-etl.pdf` |
-| Relatório do processo ETL (ODF) | `docs/relatorio-etl.odt` |
+| Relatório do modelo dimensional (MD/PDF/ODF) | `docs/relatorio-dimensional.{md,pdf,odt}` |
+| Relatório do processo ETL (MD/PDF/ODF) | `docs/relatorio-etl.{md,pdf,odt}` |
+| Esta folha de rosto (MD/PDF/ODF) | `docs/folha-de-rosto.{md,pdf,odt}` |
+| Figuras dos relatórios (fonte SVG + PNG + geradores) | `docs/figuras/` |
+| Script de build dos relatórios (figuras → PDF/ODT) | `docs/build.sh` |
+| Folha de estilo dos PDFs | `docs/estilo-relatorio.css` |
 | Esquemas dos outros grupos (justificativa do ETL) | `docs/grupos-fonte/{mae016, locadora-db, bd-dw-26-1, bigdata}/` |
 | Esquema da própria Parte 1 (referência) | `docs/grupos-fonte/locadora-dw-parte1/` |
 | Scripts SQL — DDL das fontes em staging | `staging/01_schema_fontes.sql`, `staging/02_seed_fontes.sql` |
