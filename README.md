@@ -110,8 +110,8 @@ Total: 14 arquivos SQL executados em sequência. O pipeline é **idempotente** �
 
 ### Entregáveis em PDF
 
-- [Relatório do modelo dimensional (PDF)](docs/relatorio-dimensional.pdf) — PDF 1 com capa, sumário, descrição completa do modelo estrela, ligação fonte→DW por fato e por dimensão, decisões de modelagem, considerações analíticas, DDL completo do DW e dicionário em apêndices.
-- [Relatório do processo ETL (PDF)](docs/relatorio-etl.pdf) — PDF 2 com arquitetura do ETL, tradução MySQL→Postgres, grupos excluídos e motivos, etapas Extract/Transform/Load, relatórios e Markov, problemas encontrados durante o desenvolvimento, conclusão e apêndices com todos os scripts.
+- Relatório do **modelo dimensional**: [PDF](docs/relatorio-dimensional.pdf) · [ODF/`.odt`](docs/relatorio-dimensional.odt) — capa, sumário, descrição completa do modelo estrela, ligação fonte→DW por fato e por dimensão, decisões de modelagem **D-01..D-10**, pendências e suposições **P-01..P-10**, todos os 15 achados da revisão adversarial dimensional (4 críticos + 6 moderados + 5 leves) com suas resoluções, considerações analíticas, DDL completo do DW e dicionário em apêndices.
+- Relatório do **processo ETL**: [PDF](docs/relatorio-etl.pdf) · [ODF/`.odt`](docs/relatorio-etl.odt) — arquitetura do ETL, tradução MySQL→Postgres, grupos excluídos e motivos, etapas Extract/Transform/Load, relatórios e Markov, todos os 14 achados da revisão ETL (2 críticos + 6 moderados + 6 leves) com suas resoluções, conclusão e apêndices com todos os scripts.
 
 ### Folha de rosto e dicionário
 

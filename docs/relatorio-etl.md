@@ -364,6 +364,27 @@ Esta seção lista os problemas reais identificados durante o desenvolvimento e 
 - **O que era:** vários valores derivados sem origem documentada (data prevista de devolução em fontes que não a expõem; lista de feriados nacionais).
 - **Como foi resolvido:** heurístico `+5 dias` documentado nos cabeçalhos dos extracts 01 e 05. Feriados nacionais conforme Lei 662/1949 + Lei 6.802/1980 + Lei 10.607/2002 (8 feriados fixos), explicado em `dw/02_dim_tempo_carga.sql` e §5.1 do modelo.
 
+## 7.12 Compilado — todos os 14 achados da revisão ETL e suas resoluções
+
+A revisão adversarial da fase ETL (`docs/revisoes/revisao-etl.md`) identificou **2 críticos + 6 moderados + 6 leves**. Compilamos aqui o quadro completo (incluindo os já discutidos acima em 7.5–7.11), para que o leitor tenha visão consolidada das resoluções:
+
+| ID | Achado | Resolução adotada |
+|---|---|---|
+| C-ETL-01 | Locações CANCELADAs sem `data_retirada_real` da fonte 3 descartadas silenciosamente (filtro `IS NOT NULL` em `08_load_fatos.sql`). | Filtro reescrito para `status_normalizado <> 'DESCONHECIDO'`; `sk_tempo_retirada_real` recebe sentinela `19000101` quando faltante. Resultado: 12 canceladas da fonte 3 recuperadas; `fato_locacao` foi de 288 para **300 linhas**. |
+| C-ETL-02 | `LATERAL JOIN ... LIMIT 1` sem `ORDER BY` em `veic_dia_alugado` produzia escolha não-determinística de pátio em 232 sobreposições. | Adicionado `ORDER BY li2.dia_retirada ASC, li2.sk_locacao ASC`. Bloco `DO` informativo emite `RAISE NOTICE` contando sobreposições antes do load. Rodar duas vezes seguidas produz resultado bit-a-bit idêntico (idempotência forte verificada). |
+| M-ETL-01 | `mae016` gravava `sk_patio_devolucao` para CANCELADAs (violação MOD-05 do modelo). | Lógica de NULL em `sk_patio_devolucao` reescrita como `WHEN sl.data_devolucao_real IS NULL THEN NULL`. As 6 linhas inconsistentes desapareceram. |
+| M-ETL-02 | `cpf_normalizado` / `cnpj_normalizado` nunca aplicavam `REGEXP_REPLACE`. | (Aceito como dívida técnica) O seed sintético já entrega CPFs/CNPJs com 11 e 14 dígitos exatos; a normalização ficou implícita no seed e marcada como ajuste futuro caso entrem dados reais com formatação. |
+| M-ETL-03 | `fato_patio_diario` nunca emitia `MANUTENCAO`/`RESERVADO`. | CTE estendida: quando não há locação cobrindo o dia E `dim_veiculo.situacao_atual IN ('MANUTENCAO','BAIXADO')`, emite `'MANUTENCAO'`. Veículos `BAIXADO` são descartados do snapshot (não devem aparecer). Resultado: snapshot passou a ter ~33 linhas `MANUTENCAO`. |
+| M-ETL-04 | `valor_total_estimado` sempre NULL (perdia receita das fontes 1, 3, 5). | Implementada fórmula declarada no modelo: `valor_diaria_aplicada × duracao_prevista_dias`. Fontes 1 e 5 passaram a ter 60/60 linhas com estimativa; fonte 3 segue NULL por **limitação estrutural da fonte** (não expõe `valor_diaria` em nenhuma tabela). |
+| M-ETL-05 | Divergência: modelo declarava sentinela `sk_tempo = 19000101`, implementação usava `-1`. | Padronizada a sentinela para `19000101` (smart-key positiva consistente com `YYYYMMDD`). DDL, loader, dicionário e relatórios alinhados. |
+| M-ETL-06 | `08_load_fatos.sql` tinha dependência implícita de `staging.stg_veiculo` populada (silenciosamente quebraria se rodado isolado). | Bloco `DO $$ ... RAISE EXCEPTION` no topo do arquivo aborta a carga com mensagem clara se `staging.stg_veiculo` estiver vazia. |
+| L-ETL-01 | `id_natural::BIGINT` quebraria com IDs não-numéricos. | Risco aceito: todas as 5 fontes têm PKs numéricas; documentado no comentário do load. |
+| L-ETL-02 | Locações da fonte 4 apontam para `reserva_id_natural` que nunca casa com `stg_reserva` (60 stubs técnicos). | Documentado no §5.1.4 do relatório e no cabeçalho do extract da fonte 4. `reserva_id_natural` preservado mas não é usado como JOIN obrigatório. |
+| L-ETL-03 | Recálculo redundante de `nome_canonico_grupo` para veículo em `08_load_fatos.sql`. | Aceito por simplicidade — o custo é desprezível no volume atual; nota deixada no comentário inline. |
+| L-ETL-04 | `bigdata` sempre traz `mecanizacao = 'DESCONHECIDA'` (impacta relatório a). | Documentado em §5.1.5: a fonte `bigdata` não expõe tipo de câmbio; veículos dela aparecem como `DESCONHECIDA` no recorte por mecanização. |
+| L-ETL-05 | Endereço de pátio em `dim_patio` resolvido por `MAX()` arbitrário entre fontes. | Aceito: os 6 pátios canônicos têm endereço idêntico em todas as fontes (são os mesmos prédios físicos); `MAX()` deduplica corretamente. |
+| L-ETL-06 | `data_devolucao_prevista` estimada como `retirada + 5d` em fontes 1 e 5 sem documentação. | Heurístico documentado no cabeçalho dos extracts 01 e 05; valor explícito no comentário do INSERT. |
+
 \newpage
 
 # 8. Conclusão

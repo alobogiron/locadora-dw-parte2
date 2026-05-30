@@ -554,15 +554,97 @@ Sem conformação aplicável: `dim_fonte` é cadastro fixo conhecido a priori, c
 - **Exceção (MOD-02):** `fato_locacao.sk_tempo_devolucao_real` e `fato_locacao.sk_patio_devolucao` são **NULL** quando a locação está `EM_ANDAMENTO` (evento ainda não ocorreu). Sentinela `19000101` reservada para "dado perdido".
 - **Justificativa:** Kimball cap. 6 distingue as duas semânticas. NULL preserva "ainda não ocorreu" (locação em curso); sentinela registra "dado faltante por bug/migração".
 
-## Iterações pós-revisão dimensional (v1.1)
+## Iterações pós-revisão dimensional (v1.1) — todos os achados endereçados
 
-A revisão adversarial (`docs/revisoes/revisao-dimensional.md`) identificou 4 críticos + 6 moderados + 5 leves. As ações corretivas foram:
+A revisão adversarial (`docs/revisoes/revisao-dimensional.md`) identificou **4 críticos + 6 moderados + 5 leves**. Listamos abaixo cada achado e a ação corretiva aplicada — todos endereçados na versão consolidada do modelo e/ou na implementação:
 
-- **CRÍTICO-01:** adicionado `sk_veiculo` em `fato_patio_diario`; grão mudado para "1 veículo × 1 dia"; pivot por situação feito na consulta.
-- **CRÍTICO-02:** grão reescrito em uma única frase clara; schema do diagrama alinhado.
-- **CRÍTICO-03 (P-09):** extensão da `src_locadora_db.veiculo` com `id_patio_origem INTEGER` documentada explicitamente.
-- **CRÍTICO-04 (P-10):** sentinela `sk_grupo = 0` `GRUPO_NAO_INFORMADO` para reservas da `bigdata`.
-- **MOD-01..06, LEVE-01..05:** reclassificações, derivações pseudocódigo, padronizações.
+### Críticos
+
+| ID | Problema apontado | Ação corretiva |
+|---|---|---|
+| CRÍTICO-01 | Grão original de `fato_patio_diario` (dia × pátio × grupo × fonte) não permitia segmentar por marca/modelo/mecanização (exigido no enunciado §a). | Grão refinado para **"1 linha por veículo por dia"**; `sk_veiculo` adicionado; pivot por situação feito na consulta; bus matrix atualizada. |
+| CRÍTICO-02 | Grão de `fato_patio_diario` declarado de forma ambígua entre texto e schema. | Grão reescrito em uma única frase clara, alinhada ao DDL. |
+| CRÍTICO-03 | `locadora-db` não amarra veículo a pátio (sem FK `veiculo.patio_id`). | **P-09** adotado: extensão mínima de `src_locadora_db.veiculo` com `id_patio_origem INTEGER REFERENCES patio(id)` durante a tradução para Postgres; coluna populada no seed; documentada como "extensão de integração" no cabeçalho do schema. |
+| CRÍTICO-04 | `bigdata.Reserva` não tem `IDCategoria`. | **P-10** adotado: linha sentinela `sk_grupo = 0` (`GRUPO_NAO_INFORMADO`) em `dim_grupo`; reservas da `bigdata` apontam para essa sentinela; documentada como categoria visível no relatório (c) para evidenciar a limitação da fonte. |
+
+### Moderados
+
+| ID | Problema | Ação corretiva |
+|---|---|---|
+| MOD-01 | `dias_antecedencia` classificada como aditiva era semanticamente incorreta. | Reclassificada como **não-aditiva (média)** no §3.2 do modelo e no relatório. |
+| MOD-02 | Política ambígua para `sk_tempo_devolucao_real` em locações `EM_ANDAMENTO`. | Decisão explícita: **NULL** preserva semântica "ainda não ocorreu"; sentinela `19000101` reservada para "dado perdido". Idêntica regra para `sk_patio_devolucao`. Documentado em D-10. |
+| MOD-03 | Caminho de JOIN ambíguo para cidade do cliente da `bigdata` (PJ via Empresa vs PF via PessoaFisica). | Pseudocódigo formal adicionado na §5.3 do modelo: `LEFT JOIN` simultâneo + `COALESCE(emp.Cidade, pf.Cidade)` baseado no XOR de `CentroCusto`. |
+| MOD-04 | `numero_contrato_fonte` ficaria NULL em 4/5 fontes (auditoria reversa frágil). | Adicionado **`id_locacao_origem BIGINT NOT NULL`** como degenerate dimension principal (PK numérica presente em 5/5 fontes); `numero_contrato_fonte` mantido como secundário (NULLABLE). |
+| MOD-05 | Os 3 caminhos de pátio em `mae016.Locacao` (previsto retirada, previsto devolução, real devolução) não estavam tratados explicitamente. | Regra fixada no §3.1 do modelo: **`sk_patio_devolucao` é sempre o REAL** quando a fonte distingue; NULL se não ocorreu. |
+| MOD-06 | Política indefinida sobre reservas canceladas no relatório (c). | Filtro padrão: `status_reserva IN ('CONFIRMADA','EM_FILA_ESPERA','CONCRETIZADA')` — exclui `CANCELADA`. Documentado no §3.2 e nos comentários do SQL do relatório (c). |
+
+### Leves
+
+| ID | Problema | Ação corretiva |
+|---|---|---|
+| LEVE-01 | `flag_tem_condutor_associado` inconsistente cross-fonte (mae016 e locadora-db têm condutor para PF também). | Substituída por **`flag_eh_pessoa_juridica BOOLEAN`** em `dim_cliente`. |
+| LEVE-02 | Atributo `descricao_periodo` com formato ambíguo ("Q2/2025" ou "Janeiro 2025"?). | Desdobrado em **`descricao_mes_ano`** (`"Janeiro/2025"`) e **`descricao_trimestre_ano`** (`"Q2/2025"`). |
+| LEVE-03 | Cardinalidade de `dim_tempo` divergente entre §4.1 e §6 (`4 015` vs `4 018`). | Corrigido para **4 018 linhas** (11 anos × 365 + 3 bissextos) + 1 sentinela = 4 019. |
+| LEVE-04 | Fonte da lista de feriados não documentada. | Documentada: **Lei 662/1949**, Lei 6.802/1980, Lei 10.607/2002 — apenas feriados nacionais fixos; móveis (Carnaval, Sexta Santa, Corpus Christi) ficam fora. 8 feriados/ano. |
+| LEVE-05 | Fórmula vaga para `valor_diaria_referencia` em `dim_grupo`. | Fixada: **média aritmética simples das 4 fontes que expõem preço** (a `locadora_db` não expõe). |
+
+---
+
+## Pendências e suposições (P-01 a P-10)
+
+Pontos do enunciado e das fontes que exigiram interpretação. Cada um numerado, com a interpretação adotada e o que mudaria se outra fosse escolhida.
+
+### P-01. "Origem" no relatório (a) interpretada como "fonte/empresa proprietária da frota"
+
+O enunciado diz "*por origem entenda-se da frota da empresa dona do pátio, ou da frota das outras cinco empresas associadas*". Modelamos isso como `sk_fonte` em `fato_patio_diario` e `codigo_fonte_dona` em `dim_patio`. O atributo derivado `flag_frota_propria_no_patio` no fato responde diretamente.
+
+**Alternativa não adotada:** modelar associação fixa "empresa-dona-do-pátio" como tabela. Rejeitada porque consumimos apenas 5 das 6 empresas associadas (P-07).
+
+### P-02. Snapshot diário do pátio é **derivado** dos sistemas-fonte
+
+Nenhuma das 5 fontes tem tabela `historico_estoque_diario`. O ETL deriva o snapshot a partir do estado atual da frota e do histórico de locações: veículo está `ALUGADO` no dia X se sua locação cobre o dia X; caso contrário está `DISPONIVEL` no `id_patio_origem` (ou no último `patio_devolucao_real`). Veículos com `situacao_atual = 'MANUTENCAO'` ficam nesse estado fora das janelas de locação.
+
+**Alternativa não adotada:** modelar `fato_estoque_evento` registrando cada mudança de situação. Rejeitada porque exige reconstruir todos os eventos e nenhuma fonte os tem completos.
+
+### P-03. Hora da locação/reserva descartada na modelagem dimensional
+
+Quatro das cinco fontes registram `TIMESTAMP` (com hora); descartamos a hora ao gerar `sk_tempo` (grão dia). A hora bruta poderia ser preservada como atributo no fato, mas nenhum dos 4 relatórios exige granularidade sub-diária.
+
+**Alternativa não adotada:** `dim_hora` (24 ou 1 440 linhas).
+
+### P-04. Cobrança e pagamento fora do modelo dimensional
+
+Quatro fontes têm `cobranca`/`PAGAMENTO`. Não criamos `fato_cobranca` porque os 4 relatórios e a Markov não falam em valores cobrados, pendências ou inadimplência. `fato_locacao.valor_total_final` cobre o necessário para análises de receita.
+
+**Alternativa não adotada:** `fato_cobranca` com `dim_forma_pagamento`.
+
+### P-05. Reserva pode não ter veículo específico
+
+O enunciado e 3 das 5 fontes deixam claro que reserva é por grupo, não por veículo. Portanto `fato_reserva` referencia `sk_grupo` mas **não** `sk_veiculo`. A `bigdata` modela reserva como `QtVeiculosSolicitados`, reforçando essa interpretação.
+
+### P-06. Lista canônica de grupos definida na fase ETL
+
+Documentamos variantes esperadas (§5.2 do modelo) mas o vocabulário canônico fechado foi consolidado durante o Transform, após inspeção dos dados-fonte. Lista final adotada: `ECONOMICO`, `INTERMEDIARIO`, `EXECUTIVO`, `SUV`, `LUXO` (5 grupos) + 1 sentinela.
+
+### P-07. Sexta empresa associada sem sistema-fonte entre os 5 escolhidos
+
+O enunciado fala em **seis** empresas; consumimos **cinco** sistemas. A sexta fica representada como pátio "Barra Shopping" sem proprietário no DW (`dim_patio.codigo_fonte_dona = NULL`). Esse pátio recebe locações cross-empresa via as 5 fontes, mas não há frota "própria" lá no `flag_frota_propria_no_patio`.
+
+### P-08. Pátios das fontes remapeados aos 6 canônicos do enunciado
+
+Algumas fontes têm pátios genéricos ou apenas FK para `Endereco`. No seed sintético atribuímos os pátios das fontes aos 6 canônicos do enunciado por convenção (definida em `staging.depara_patio`).
+
+### P-09. Extensão da `src_locadora_db.veiculo` com `id_patio_origem` (CRÍTICO-03)
+
+A tabela original não tem FK veículo → pátio. Estendemos a tradução Postgres com `id_patio_origem INTEGER REFERENCES patio(id)` (coluna mínima documentada como extensão de integração). Não inventa regra de negócio — apenas materializa relação implícita já presente no enunciado.
+
+**Alternativas não adotadas:** (a) descartar veículos da fonte do `fato_patio_diario` (perde 1/5 das linhas); (b) round-robin no ETL sem persistir a decisão (atrapalha auditoria).
+
+### P-10. Sentinela `sk_grupo = 0` para reservas da `bigdata` (CRÍTICO-04)
+
+A `bigdata.Reserva` não expõe `IDCategoria`. Adotamos linha sentinela `'GRUPO_NAO_INFORMADO'` em `dim_grupo`. O relatório (c) exibe essa categoria como linha separada — evidência transparente da limitação da fonte.
+
+**Alternativas não adotadas:** descartar reservas da `bigdata` (perde 1/5 do relatório c); atribuir grupo arbitrário (oculta a limitação).
 
 \newpage
 
