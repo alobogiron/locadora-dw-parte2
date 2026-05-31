@@ -107,12 +107,3 @@ psql -d locadora_dw_parte2 -f relatorios/05_matriz_markov.sql
 
 Total: 14 arquivos SQL executados em sequência. O pipeline é **idempotente** — re-execução produz resultado bit-a-bit idêntico (via `DROP SCHEMA ... CASCADE`, `TRUNCATE ... RESTART IDENTITY`, `ON CONFLICT DO UPDATE` e `DELETE WHERE sk_fonte = N`).
 
-## Documentos principais
-
-### Entregáveis em PDF
-
-Ambos os relatórios têm **capa diagramada, sumário e lista de figuras**, e estão disponíveis nos três formatos (`.md`, `.pdf`, `.odt`).
-
-- Relatório do **modelo dimensional** (capa + sumário + **9 figuras**): [PDF](docs/relatorio-dimensional.pdf) · [ODF/`.odt`](docs/relatorio-dimensional.odt) · [Markdown](docs/relatorio-dimensional.md) — descrição completa do modelo estrela ilustrada (visão geral da integração, bus matrix, esquema estrela, grãos de fato, `fato_locacao` em detalhe, conformação de pátios, *smart-key*, SCD-1 e cadeia de Markov), ligação fonte→DW por fato e por dimensão, decisões **D-01..D-10**, pendências **P-01..P-10**, os 15 achados da revisão adversarial dimensional (4 críticos + 6 moderados + 5 leves) com resoluções, considerações analíticas, DDL completo do DW e dicionário em apêndices.
-- Relatório do **processo ETL** (capa + sumário + **10 figuras**): [PDF](docs/relatorio-etl.pdf) · [ODF/`.odt`](docs/relatorio-etl.odt) · [Markdown](docs/relatorio-etl.md) — arquitetura do ETL e pipeline de execução ilustrados, tradução MySQL→Postgres, seleção de fontes (5 integradas × 3 excluídas), *Extract* da `bigdata`, *Transform* em 7 etapas, *Load* e idempotência, matriz de Markov 6×6, os 14 achados da revisão ETL (2 críticos + 6 moderados + 6 leves) com resoluções, conclusão e apêndices com todos os scripts.
-
