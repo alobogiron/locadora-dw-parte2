@@ -49,11 +49,8 @@ body {
     position: relative;
     box-sizing: border-box;
     margin: 0;
-    padding: 0;
-    height: 297mm;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    padding: 6cm 0 4cm 0;
+    min-height: 297mm;
     text-align: center;
     background:
         linear-gradient(180deg, #0f3d6e 0%, #0f3d6e 32%, #ffffff 32%, #ffffff 100%);
@@ -74,8 +71,7 @@ body {
     font-weight: 700;
     line-height: 1.18;
     color: #0f3d6e;
-    margin: 0 2.2cm .2cm 2.2cm;
-    padding-top: 1.4cm;
+    margin: 0 2.2cm .6cm 2.2cm;
     page-break-before: avoid;
     border: none;
 }
